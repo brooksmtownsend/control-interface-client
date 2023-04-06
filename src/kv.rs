@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use async_nats::{jetstream::kv::Store, Client};
+use futures::TryStreamExt;
 use tracing::debug;
 use wasmbus_rpc::core::LinkDefinition;
 
@@ -39,26 +40,35 @@ pub(crate) async fn get_kv_store(
 }
 
 pub(crate) async fn get_claims(store: &Store) -> Result<GetClaimsResponse> {
-    let mut claims = Vec::new();
     let entries = store.keys().await?;
-    for key in entries {
-        if key.starts_with(CLAIMS_PREFIX) {
-            add_claim(&mut claims, store.get(key).await?).await?;
-        }
-    }
-    Ok(GetClaimsResponse { claims })
+    Ok(GetClaimsResponse {
+        claims: entries
+            .try_filter_map(|key| async {
+                if key.starts_with(CLAIMS_PREFIX) {
+                    parse_claims(store.get(key).await?)
+                } else {
+                    Ok(None)
+                }
+            })
+            .try_collect()
+            .await?,
+    })
 }
 
 pub(crate) async fn get_links(store: &Store) -> Result<LinkDefinitionList> {
-    let mut links = Vec::new();
     let entries = store.keys().await?;
-    for key in entries {
-        if key.starts_with(LINKDEF_PREFIX) {
-            add_linkdef(&mut links, store.get(key).await?).await?;
-        }
-    }
-
-    Ok(LinkDefinitionList { links })
+    Ok(LinkDefinitionList {
+        links: entries
+            .try_filter_map(|key| async {
+                if key.starts_with(LINKDEF_PREFIX) {
+                    parse_linkdef(store.get(key).await?)
+                } else {
+                    Ok(None)
+                }
+            })
+            .try_collect()
+            .await?,
+    })
 }
 
 pub(crate) async fn put_link(store: &Store, ld: LinkDefinition) -> Result<()> {
@@ -84,22 +94,24 @@ pub(crate) async fn delete_link(
     store.delete(key).await.map(|_| ())
 }
 
-async fn add_linkdef(links: &mut Vec<LinkDefinition>, data: Option<Vec<u8>>) -> Result<()> {
-    if let Some(d) = data {
-        let ld: LinkDefinition = serde_json::from_slice(&d)?;
-        links.push(ld);
+fn parse_claims(data: Option<Vec<u8>>) -> Result<Option<HashMap<String, String>>> {
+    match data {
+        Some(d) => {
+            let json: HashMap<String, String> = serde_json::from_slice(&d)?;
+            Ok(Some(json))
+        }
+        None => Ok(None),
     }
-
-    Ok(())
 }
 
-async fn add_claim(claims: &mut Vec<HashMap<String, String>>, data: Option<Vec<u8>>) -> Result<()> {
-    if let Some(d) = data {
-        let json: HashMap<String, String> = serde_json::from_slice(&d)?;
-        claims.push(json);
+fn parse_linkdef(data: Option<Vec<u8>>) -> Result<Option<LinkDefinition>> {
+    match data {
+        Some(d) => {
+            let json: LinkDefinition = serde_json::from_slice(&d)?;
+            Ok(Some(json))
+        }
+        None => Ok(None),
     }
-
-    Ok(())
 }
 
 pub(crate) fn ld_hash(ld: &LinkDefinition) -> String {

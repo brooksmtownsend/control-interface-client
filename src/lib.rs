@@ -11,7 +11,7 @@ mod types;
 
 pub use types::*;
 
-use async_nats::jetstream::kv::Store;
+use async_nats::{jetstream::kv::Store, HeaderMap};
 use cloudevents::event::Event;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration};
@@ -20,9 +20,9 @@ use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, instrument, trace};
 use tracing_futures::Instrument;
 use wasmbus_rpc::core::LinkDefinition;
-use wasmbus_rpc::otel::OtelHeaderInjector;
+// use wasmbus_rpc::otel::OtelHeaderInjector;
 
-type Result<T> = ::std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+type Result<T> = ::std::result::Result<T, async_nats::Error>;
 
 /// Lattice control interface client
 #[derive(Clone, Debug)]
@@ -180,7 +180,8 @@ impl Client {
             timeout,
             self.nc.request_with_headers(
                 subject,
-                OtelHeaderInjector::default_with_span().into(),
+                HeaderMap::new(),
+                // OtelHeaderInjector::default_with_span().into(),
                 payload.into(),
             ),
         )
@@ -188,7 +189,7 @@ impl Client {
         {
             Err(_) => Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "timed out").into()),
             Ok(Ok(message)) => Ok(message),
-            Ok(Err(e)) => Err(e),
+            Ok(Err(e)) => Err(e.into()),
         }
     }
 
@@ -355,7 +356,8 @@ impl Client {
             .nc
             .publish_with_headers(
                 subject,
-                OtelHeaderInjector::default_with_span().into(),
+                HeaderMap::new(),
+                // OtelHeaderInjector::default_with_span().into(),
                 bytes.into(),
             )
             .await;
@@ -674,7 +676,8 @@ impl Client {
             .publish_with_reply_and_headers(
                 subject.clone(),
                 reply,
-                OtelHeaderInjector::default_with_span().into(),
+                HeaderMap::new(),
+                // OtelHeaderInjector::default_with_span().into(),
                 payload.into(),
             )
             .await?;
@@ -821,7 +824,8 @@ async fn start_provider_(
         timeout,
         client.request_with_headers(
             subject,
-            OtelHeaderInjector::default_with_span().into(),
+            HeaderMap::new(),
+            // OtelHeaderInjector::default_with_span().into(),
             bytes.into(),
         ),
     )
