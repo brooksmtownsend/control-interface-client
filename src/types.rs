@@ -172,6 +172,9 @@ pub struct ProviderDescription {
     /// this provider instance
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotations: Option<AnnotationMap>,
+    /// This instance's unique ID (guid)
+    #[serde(default)]
+    pub instance_id: String,
     /// Provider's unique 56-character ID
     #[serde(default)]
     pub id: String,
